@@ -1,0 +1,26 @@
+{
+  "name": "Christmas Cleanup",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": {
+      "$properties": {
+        "StreamingEnabled": false
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Cleanup": {
+          "$path": "src/Cleanup.client.luau"
+        }
+      }
+    },
+    "ServerScriptService": {
+      "Stage": {
+        "$path": "src/Stage.server.luau"
+      },
+      "LodgeWorld": {
+        "$path": "src/LodgeWorld.luau"
+      }
+    }
+  }
+}
