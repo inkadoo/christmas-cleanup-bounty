@@ -1,12 +1,16 @@
 local Players = game:GetService("Players")
-local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
 local V, C = Vector3.new, Color3.fromRGB
-local red, gold = C(157,45,53), C(255,177,74)
-local dark = C(57,40,39)
 local World=require(script.Parent.LodgeWorld)
+local Rig=require(script.Parent.ElfRig)
+local FX=require(script.Parent.ShiftFX)
+local CrewKit=require(script.Parent.CrewKit)
 local map,part,build,prompt=World.map,World.part,World.build,World.prompt
 local start,throw,firePos,flame,bin=World.start,World.throw,World.firePos,World.flame,World.bin
+FX.hearthIdle(flame)
+local attendant=Rig.build(1,V(5.55,2.04,46.4),true)
+attendant.Name="Holly, shift lead"
+attendant.Parent=map
 local mess=Instance.new("Folder",workspace)
 mess.Name="Elf Ragdolls"
 local stains=Instance.new("Folder",workspace)
@@ -65,6 +69,19 @@ local function getMop(player)
     return (character and character:FindFirstChild("Mop")) or (backpack and backpack:FindFirstChild("Mop"))
 end
 local maxDirt=8
+local shiftOwner,deadline,cleared
+
+local function paintMop(tool,dirt)
+    local amount=dirt/maxDirt
+    for index,piece in tool:GetChildren() do
+        if piece:IsA("BasePart") and piece.Name=="Cotton mop yarn" then
+            local clean=piece:GetAttribute("CleanColor")
+            if clean then
+                piece.Color=clean:Lerp(C(131,42,60),math.clamp(amount*(0.70+index%4*0.16),0,1))
+            end
+        end
+    end
+end
 take.Triggered:Connect(function(player)
     local character=player.Character
     local root=character and character:FindFirstChild("HumanoidRootPart")
@@ -82,6 +99,7 @@ take.Triggered:Connect(function(player)
             local piece=source:Clone()
             piece:ClearAllChildren()
             piece.Anchored,piece.CanCollide,piece.CanQuery,piece.CanTouch,piece.Massless=false,false,false,false,true
+            piece:SetAttribute("CleanColor",piece.Color)
             piece.Parent=tool
             if source==pole then grip=piece piece.Name="Handle"
             else table.insert(pieces,piece) end
@@ -95,7 +113,7 @@ take.Triggered:Connect(function(player)
     local defaultGrip=tool.Grip
     tool.Activated:Connect(function()
         local now=os.clock()
-        if tool.Parent~=player.Character or now-last<0.42 then return end
+        if shiftOwner~=player or tool.Parent~=player.Character or now-last<0.42 then return end
         local currentRoot=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if not currentRoot then return end
         last=now
@@ -113,8 +131,11 @@ take.Triggered:Connect(function(player)
             if distance and distance<range then nearest,range=group,distance end
         end
         if nearest then
+            local center=nearest:GetAttribute("Center")
             nearest:Destroy()
+            FX.mop(center)
             tool:SetAttribute("Dirt",dirt+1)
+            paintMop(tool,dirt+1)
             player:SetAttribute("Mopped",(player:GetAttribute("Mopped") or 0)+1)
         end
     end)
@@ -132,18 +153,10 @@ wash.Triggered:Connect(function(player)
     if now-(mop:GetAttribute("LastRinse") or -1)<0.7 then return end
     mop:SetAttribute("LastRinse",now)
     mop:SetAttribute("Dirt",0)
-    local splash=Instance.new("ParticleEmitter",bucketWater)
-    splash.Rate=0
-    splash.Color=ColorSequence.new(C(151,218,235))
-    splash.Speed=NumberRange.new(3,6)
-    splash.Lifetime=NumberRange.new(0.22,0.45)
-    splash.Acceleration=V(0,-20,0)
-    splash.Size=NumberSequence.new(0.12)
-    splash:Emit(12)
-    Debris:AddItem(splash,0.7)
+    paintMop(mop,0)
+    FX.rinse(bucketWater)
 end)
 local MAX_TIME=180
-local shiftOwner,deadline,cleared
 local carries={}
 local inFlight={}
 local function state(player,value)
@@ -152,10 +165,12 @@ end
 local function cleanupCarry(player)
     local carry=carries[player]
     if carry then
+        for _,object in carry.pose do object:Destroy() end
         carry.weld:Destroy()
         if carry.model.Parent then carry.model.Parent=mess end
         carries[player]=nil
         throw.Enabled=false
+        World.markThrow(false)
     end
     return carry
 end
@@ -163,23 +178,8 @@ local function release(player)
     local carry=cleanupCarry(player)
     if not carry or not carry.model.Parent then return end
     carry.pickup.Enabled=true
-    for _,p in carry.model:GetChildren() do
-        if p:IsA("BasePart") then
-            p.CanCollide=p==carry.model.PrimaryPart or p.Name=="Head" or p.Name=="Sleeve" or p.Name=="Boot"
-            p.Massless=not p.CanCollide
-        end
-    end
-    carry.model.PrimaryPart:SetNetworkOwner(nil)
+    Rig.setMode(carry.model, "floor")
     player:SetAttribute("HoldingElf",false)
-end
-local function joint(torso,limb,worldPoint)
-    local a,b=Instance.new("Attachment",torso),Instance.new("Attachment",limb)
-    a.Position=torso.CFrame:PointToObjectSpace(worldPoint)
-    b.Position=limb.CFrame:PointToObjectSpace(worldPoint)
-    local socket=Instance.new("BallSocketConstraint",limb)
-    socket.Attachment0,socket.Attachment1,socket.LimitsEnabled,socket.UpperAngle=a,b,true,80
-    local filter=Instance.new("NoCollisionConstraint",limb)
-    filter.Part0,filter.Part1=torso,limb
 end
 local bloodRandom=Random.new(735)
 local function bloodGroup(surface,normal,count,spread)
@@ -225,102 +225,34 @@ local function dressMess()
     end
 end
 local function ragdoll(pos,index)
-    local model=Instance.new("Model",mess)
-    model.Name="Workshop elf "..index
-    local tunic=index%2==0 and C(43,127,83) or C(153,53,67)
-    local skin=C(210,153,117)
-    local function limb(name,size,offset,color)
-        local p=part(model,name,size,pos+offset,color)
-        p.CustomPhysicalProperties=PhysicalProperties.new(0.6,0.55,0.15)
-        return p
-    end
-    local torso=limb("Torso",V(1.14,1.31,0.69),V(0,0.9,0),tunic)
-    torso.Material=Enum.Material.SmoothPlastic
-    model.PrimaryPart=torso
-    local head=limb("Head",V(0.87,0.82,0.72),V(0,1.92,0),skin)
-    head.Shape=Enum.PartType.Ball
-    joint(torso,head,pos+V(0,1.56,0))
-    local function detail(name,shape,size,offset,color,base,rotation)
-        local p=limb(name,size,offset,color)
-        p.Shape=shape
-        p.CanCollide=false
-        p.Massless=true
-        if rotation then p.CFrame*=rotation end
-        local weld=Instance.new("WeldConstraint",p)
-        weld.Part0,weld.Part1=base,p
-        return p
-    end
-    local ball,block=Enum.PartType.Ball,Enum.PartType.Block
-    local headY=1.92
-    for _,side in {-1,1} do
-        detail("Pointed ear",ball,V(0.34,0.17,0.17),V(side*0.38,headY+0.04,0),skin,head,
-            CFrame.Angles(0,0,math.rad(side*28)))
-        detail("Eye",ball,V(0.23,0.18,0.099),V(side*0.173,headY+0.055,-0.331),C(247,237,221),head)
-        detail("Iris",ball,V(0.084,0.104,0.048),V(side*0.165,headY+0.049,-0.378),C(55,39,35),head)
-        detail("Brow",block,V(0.107,0.024,0.022),V(side*0.17,headY+0.184,-0.327),C(82,55,42),head,
-            CFrame.Angles(0,0,side*0.12))
-    end
-    detail("Nose",ball,V(0.108,0.14,0.15),V(0,headY-0.032,-0.34),skin:Lerp(red,0.14),head)
-    detail("Mouth",block,V(0.15,0.024,0.038),V(0,headY-0.158,-0.337),C(114,61,51),head)
-    detail("Hair",ball,V(0.69,0.35,0.69),V(0,headY+0.22,0.049),C(83,49,34),head)
-    for i=1,4 do
-        local offset=V(-0.25+i*0.1,headY+0.29-(i%2)*0.07,-0.21)
-        detail("Sculpted forelock",ball,V(0.25,0.23,0.23),offset,C(98,59,38),head,CFrame.Angles(0,0,0.28*i))
-    end
-    detail("Wool collar",block,V(0.58,0.13,0.67),V(0,1.49,0),C(204,203,174),torso)
-    detail("Leather belt",block,V(1.07,0.18,0.65),V(0,0.59,0),dark,torso)
-    detail("Brass buckle",block,V(0.23,0.18,0.06),V(0,0.59,-0.34),gold,torso)
-    for i=1,3 do
-        detail("Coat button",ball,V(0.08,0.08,0.05),V(0,0.68+i*0.22,-0.33),gold,torso)
-    end
-    local cap=limb("Elf cap",V(0.83,0.45,0.78),V(0,2.34,0),red)
-    cap.Shape=Enum.PartType.Ball
-    cap.CanCollide=false
-    cap.Material=Enum.Material.Fabric
-    detail("Cap trim",ball,V(0.87,0.17,0.8),V(0,2.22,0),C(229,221,198),head)
-    detail("Cap tip",ball,V(0.29,0.44,0.34),V(0.22,2.51,0.06),red,head,CFrame.Angles(0,0,-0.69))
-    detail("Cap pompom",ball,V(0.19,0.19,0.19),V(0.335,2.64,0.06),C(228,219,181),head)
-    local hat=Instance.new("WeldConstraint",cap)
-    hat.Part0,hat.Part1=head,cap
-    for _,side in {-1,1} do
-        local arm=limb("Sleeve",V(0.38,1.1,0.39),V(side*0.73,0.88,0),tunic)
-        joint(torso,arm,pos+V(side*0.56,1.37,0))
-        arm.Material=Enum.Material.SmoothPlastic
-        detail("Hand",ball,V(0.32,0.28,0.3),V(side*0.73,0.28,0),skin,arm)
-        detail("Cuff",block,V(0.4,0.11,0.42),V(side*0.73,0.43,0),C(216,210,185),arm)
-        local leg=limb("Boot",V(0.42,1.08,0.49),V(side*0.29,-0.18,0),dark)
-        joint(torso,leg,pos+V(side*0.29,0.29,0))
-        detail("Boot toe",ball,V(0.43,0.32,0.64),V(side*0.29,-0.62,-0.14),dark,leg)
-    end
-    model:PivotTo(CFrame.new(pos+V(0,0.5,0))*CFrame.Angles(0,index*0.83,0)*CFrame.Angles(math.rad(84),0,0))
-    local pickup=prompt(torso,"Pick up","Elf ragdoll")
+    local model=Rig.build(index,pos)
+    local torso=model.PrimaryPart
+    local pickup=prompt(torso,"Pick up",model:GetAttribute("ElfName").." • Workshop elf")
     pickup.Triggered:Connect(function(player)
         if shiftOwner~=player or carries[player] or not pickup.Enabled or workspace:GetServerTimeNow()>=deadline then return end
         local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
         if not root or (root.Position-torso.Position).Magnitude>10 then return end
         pickup.Enabled=false
-        for _,p in model:GetChildren() do
-            if p:IsA("BasePart") then p.CanCollide=false p.Massless=true end
-        end
-        model:PivotTo(root.CFrame*CFrame.new(0,0.35,-2.1))
+        Rig.setMode(model, "carried", player)
+        model:PivotTo(root.CFrame*CFrame.new(0,0.12,-1.73)*CFrame.Angles(math.rad(22),0,math.rad(-72)))
         model.Parent=player.Character
         local weld=Instance.new("WeldConstraint",torso)
         weld.Part0,weld.Part1=root,torso
-        carries[player]={model=model,weld=weld,pickup=pickup}
+        local pose=CrewKit.grabPose(player.Character,root)
+        carries[player]={model=model,weld=weld,pickup=pickup,pose=pose}
         player:SetAttribute("HoldingElf",true)
+        player:SetAttribute("CarriedElf",model:GetAttribute("ElfName"))
+        FX.carried(model)
         throw.Enabled=true
+        World.markThrow(true)
     end)
     splatter(pos)
-    for _,p in model:GetChildren() do
-        if p:IsA("BasePart") then p.Anchored=false end
-    end
-    for _,p in model:GetChildren() do
-        if p:IsA("BasePart") and p:CanSetNetworkOwnership() then p:SetNetworkOwner(nil) end
-    end
+    Rig.releaseIntoWorld(model,mess)
 end
 local function finish(player,outcome)
     if shiftOwner~=player then return end
     shiftOwner=nil
+    workspace:SetAttribute("ShiftOccupied",false)
     cleanupCarry(player)
     mess:ClearAllChildren()
     stains:ClearAllChildren()
@@ -329,17 +261,23 @@ local function finish(player,outcome)
     player:SetAttribute("HoldingElf",false)
     player:SetAttribute("TimeRemaining",math.max(0,math.floor(deadline-workspace:GetServerTimeNow())))
     state(player,outcome)
+    CrewKit.clear(player.Character)
+    if outcome=="complete" then FX.sound("finish",start.Parent) end
     local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if root then root.CFrame=CFrame.new(0,4,57) end
 end
 start.Triggered:Connect(function(player)
     if shiftOwner then return end
     shiftOwner,cleared=player,0
+    workspace:SetAttribute("ShiftOccupied",true)
     deadline=workspace:GetServerTimeNow()+MAX_TIME
     start.Enabled=false
+    player:SetAttribute("ElfTotal",#spots)
     player:SetAttribute("Cleared",0)
     player:SetAttribute("ShiftDeadline",deadline)
+    FX.clockIn(start.Parent)
     state(player,"playing")
+    CrewKit.equip(player.Character)
     player:SetAttribute("Mopped",0)
     dressMess()
     for i,pos in spots do ragdoll(pos,i) end
@@ -353,19 +291,16 @@ throw.Triggered:Connect(function(player)
     local carry=cleanupCarry(player)
     player:SetAttribute("HoldingElf",false)
     local model=carry.model
-    local torso=model.PrimaryPart
     local origin=V(0,3.2,-35)
     model:PivotTo(CFrame.new(origin))
-    local flight=0.33
+    local flight=0.48
     local launch=(firePos-origin)/flight+V(0,workspace.Gravity*flight/2,0)
-    for _,p in model:GetChildren() do
-        if p:IsA("BasePart") then
-            p.Massless=false
-            p:SetNetworkOwner(nil)
-            p.AssemblyLinearVelocity=launch
-            p.AssemblyAngularVelocity=V(5,3,1)
-        end
+    Rig.setMode(model, "flight")
+    for index,body in Rig.bodies(model) do
+        body.AssemblyLinearVelocity=launch
+        body.AssemblyAngularVelocity=V(8 + index%3, 4, 3 - index%4)
     end
+    FX.throw(model)
     inFlight[model]=workspace:GetServerTimeNow()+flight
 end)
 RunService.Heartbeat:Connect(function()
@@ -374,9 +309,7 @@ RunService.Heartbeat:Connect(function()
     for model,arrival in inFlight do
         if now>=arrival then
             inFlight[model]=nil
-            local burst=Instance.new("Fire",flame)
-            burst.Size,burst.Heat,burst.Color=9,11,C(255,190,63)
-            Debris:AddItem(burst,0.55)
+            FX.hearthHit(firePos)
             model:Destroy()
             cleared+=1
             shiftOwner:SetAttribute("Cleared",cleared)
@@ -388,6 +321,11 @@ end)
 local function setup(player)
     state(player,"lobby")
     player.CharacterRemoving:Connect(function() release(player) end)
+    player.CharacterAdded:Connect(function(character)
+        if shiftOwner~=player then return end
+        local humanoid=character:WaitForChild("Humanoid",5)
+        if humanoid and shiftOwner==player then CrewKit.equip(character) end
+    end)
 end
 Players.PlayerAdded:Connect(setup)
 for _,player in Players:GetPlayers() do setup(player) end

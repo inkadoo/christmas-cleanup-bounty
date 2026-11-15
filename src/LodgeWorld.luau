@@ -45,6 +45,7 @@ local function prompt(parent,action,object,range)
     local p=Instance.new("ProximityPrompt",parent)
     p.ActionText,p.ObjectText,p.MaxActivationDistance=action,object,range or 8
     p.RequiresLineOfSight=false
+    p.Style=Enum.ProximityPromptStyle.Custom
     return p
 end
 Lighting.ClockTime=18.35
@@ -344,9 +345,23 @@ build("Hearth floor",0,0.55,-41,12,0.65,7.8,stone,Enum.Material.Slate)
 build("Firebox back",0,3.5,-44.5,12,7,1.3,stone,Enum.Material.Brick)
 for _,x in {-5.1,5.1} do build("Firebox pillar",x,3.2,-41.5,1.7,6.4,4.8,stone,Enum.Material.Brick) end
 build("Mantel",0,6.5,-41.6,13,0.8,5.1,dark,Enum.Material.Wood)
-for i=-4,4 do
-    local coal=build("Coals",i*0.77,1.15,-41+(i%2)*0.64,0.85,0.5,0.9,i%2==0 and gold or red,Enum.Material.Neon)
-    coal.Shape=Enum.PartType.Ball
+for i=-3,3 do
+    local x=i*0.69
+    local z=-41.5+math.sin(i*1.9)*0.83
+    local ember=decor("Ember seam",x,0.97,z,0.95,0.24,0.78,C(255,88+i%3*23,40),Enum.Material.Neon)
+    local coal=decor("Charred coal",x,1.08,z-0.13,0.85,0.31,0.76,C(57+i%3*5,39,41),Enum.Material.Basalt)
+    coal.CFrame*=CFrame.Angles(0,0.47*i,0.17*math.sin(i))
+    ember.CFrame=coal.CFrame*CFrame.new(0,-0.10,0.15)
+end
+for i=0,3 do
+    local log=decor("Split log",0,1.18+i%2*0.23,-42.22+i*.55,4.3-i%2*.48,0.42,0.42,C(85,46,34),Enum.Material.Wood)
+    log.Shape=Enum.PartType.Cylinder
+    log.CFrame*=CFrame.Angles(0,(-1)^i*math.rad(21-i*3),math.rad(i%2*8))
+    for _,side in {-1,1} do
+        local ring=decor("Cut log end",0,0,-42,0.045,0.32,0.32,C(156,94,54),Enum.Material.Wood)
+        ring.Shape=Enum.PartType.Cylinder
+        ring.CFrame=log.CFrame*CFrame.new(side*log.Size.X/2,0,0)
+    end
 end
 local flame=part(map,"Hearth flame",V(0.5,0.5,0.5),firePos,gold)
 flame.Transparency=1
@@ -358,11 +373,25 @@ build("Chimney stack",0,11.9,-44.2,5.3,14.8,3.8,stone,Enum.Material.Brick)
 build("Chimney crown",0,19.5,-44.2,6.05,0.53,4.5,dark,Enum.Material.Slate)
 sign("Fireplace",V(0,7.5,-39.6))
 local bin=build("Throw zone",0,1,-35.3,7.5,0.15,3,gold)
-bin.CanCollide=false
+bin.CanCollide,bin.CanTouch,bin.CanQuery=false,false,false
+bin.Transparency=1
+local throwMark={}
+for _,side in {-1,1} do
+    local corner=decor("Hearth threshold",side*3.9,0.359,-36.2,0.14,0.027,1.55,C(147,100,63),Enum.Material.Metal)
+    local tip=decor("Hearth threshold",side*3.47,0.359,-35.46,1,0.027,0.14,C(147,100,63),Enum.Material.Metal)
+    table.insert(throwMark,corner)
+    table.insert(throwMark,tip)
+end
+local function markThrow(active)
+    for _,tile in throwMark do
+        tile.Color=active and C(255,180,89) or C(147,100,63)
+        tile.Material=active and Enum.Material.Neon or Enum.Material.Metal
+    end
+end
 local throw=prompt(bin,"Throw into fire","Fireplace",9)
 throw.KeyboardKeyCode=Enum.KeyCode.F
 throw.GamepadKeyCode=Enum.KeyCode.ButtonX
 throw.Enabled=false
 
 
-return {map=map,part=part,build=build,prompt=prompt,start=start,throw=throw,firePos=firePos,flame=flame,bin=bin}
+return {map=map,part=part,build=build,prompt=prompt,start=start,throw=throw,firePos=firePos,flame=flame,bin=bin,markThrow=markThrow}

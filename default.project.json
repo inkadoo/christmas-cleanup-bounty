@@ -11,6 +11,15 @@
       "StarterPlayerScripts": {
         "Cleanup": {
           "$path": "src/Cleanup.client.luau"
+        },
+        "Prompts": {
+          "$path": "src/Prompts.client.luau"
+        },
+        "Snow": {
+          "$path": "src/Snow.client.luau"
+        },
+        "Footsteps": {
+          "$path": "src/Footsteps.client.luau"
         }
       }
     },
@@ -20,6 +29,23 @@
       },
       "LodgeWorld": {
         "$path": "src/LodgeWorld.luau"
+      },
+      "ElfDesign": {
+        "$path": "src/ElfDesign.luau"
+      },
+      "ElfRig": {
+        "$path": "src/ElfRig.luau"
+      },
+      "ShiftFX": {
+        "$path": "src/ShiftFX.luau"
+      },
+      "CrewKit": {
+        "$path": "src/CrewKit.luau"
+      }
+    },
+    "ReplicatedStorage": {
+      "LodgeSoundBank": {
+        "$path": "src/SoundBank.luau"
       }
     }
   }
